@@ -1,10 +1,9 @@
 package com.vittig.playgrid.websocket.handler;
 
-import com.vittig.playgrid.dto.request.CreateRoomRequest;
 import com.vittig.playgrid.dto.websocket.WebSocketMessage;
 import com.vittig.playgrid.enums.MessageType;
-import com.vittig.playgrid.model.GameRoom;
 import com.vittig.playgrid.service.contract.GameRoomService;
+import com.vittig.playgrid.websocket.communication.dispatcher.MessageDispatcher;
 import com.vittig.playgrid.websocket.session.SessionRegistry;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -12,6 +11,7 @@ import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.core.JacksonException;
@@ -24,6 +24,7 @@ public class PlaygridWebSocketHandler extends TextWebSocketHandler {
     private final SessionRegistry sessionRegistry;
     private final JsonMapper jsonMapper;
     private final GameRoomService gameRoomService;
+    private final MessageDispatcher messageDispatcher;
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws IOException {
@@ -35,29 +36,26 @@ public class PlaygridWebSocketHandler extends TextWebSocketHandler {
     @Override
     protected void handleTextMessage(WebSocketSession session,
                                      TextMessage message) throws IOException{
-        GameRoom gameRoom;
-        try{
-            WebSocketMessage<CreateRoomRequest> incomingMessage =
-                    jsonMapper.readValue(
-                            message.getPayload(),
-                            new TypeReference<WebSocketMessage<CreateRoomRequest>>(){}
-                    );
 
-            if (incomingMessage == null) {
+        WebSocketMessage<?> response;
+        try{
+            WebSocketMessage<JsonNode> incomingMessage = jsonMapper.readValue(
+                    message.getPayload(),
+                    new TypeReference<>(){}
+            );
+
+            if(incomingMessage == null){
                 throw new IllegalArgumentException("Invalid message");
             }
 
-            if (incomingMessage.type() != MessageType.CREATE_ROOM) {
-                throw new IllegalArgumentException("Unsupported message type");
+            if (incomingMessage.type() == null){
+                throw new IllegalArgumentException("Invalid type");
             }
 
-            if (incomingMessage.payload() == null) {
-                throw new IllegalArgumentException("Missing payload");
-            }
+            MessageType messageType = incomingMessage.type();
 
-            String roomName = incomingMessage.payload().name();
+            response = messageDispatcher.dispatch(session.getId(), messageType, incomingMessage.payload());
 
-            gameRoom = gameRoomService.createRoom(session.getId(), roomName);
         }catch (JacksonException e) {
             sendMessage(session,
                     new WebSocketMessage<>(MessageType.ERROR, "Invalid JSON message"));
@@ -67,9 +65,6 @@ public class PlaygridWebSocketHandler extends TextWebSocketHandler {
                     new WebSocketMessage<>(MessageType.ERROR, e.getMessage()));
             return;
         }
-
-        WebSocketMessage<GameRoom> response =
-                new WebSocketMessage<>(MessageType.ROOM_CREATED, gameRoom);
 
         sendMessage(session, response);
 
