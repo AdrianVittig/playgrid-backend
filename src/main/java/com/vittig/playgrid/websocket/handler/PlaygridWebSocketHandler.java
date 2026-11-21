@@ -2,6 +2,8 @@ package com.vittig.playgrid.websocket.handler;
 
 import com.vittig.playgrid.dto.websocket.WebSocketMessage;
 import com.vittig.playgrid.enums.MessageType;
+import com.vittig.playgrid.exception.HostAlreadyOwnsARoomException;
+import com.vittig.playgrid.exception.InvalidRoomNameException;
 import com.vittig.playgrid.service.contract.GameRoomService;
 import com.vittig.playgrid.websocket.communication.dispatcher.MessageDispatcher;
 import com.vittig.playgrid.websocket.session.SessionRegistry;
@@ -61,6 +63,10 @@ public class PlaygridWebSocketHandler extends TextWebSocketHandler {
                     new WebSocketMessage<>(MessageType.ERROR, "Invalid JSON message"));
             return;
         } catch (IllegalArgumentException | IllegalStateException e) {
+            sendMessage(session,
+                    new WebSocketMessage<>(MessageType.ERROR, e.getMessage()));
+            return;
+        } catch (HostAlreadyOwnsARoomException | InvalidRoomNameException e) {
             sendMessage(session,
                     new WebSocketMessage<>(MessageType.ERROR, e.getMessage()));
             return;

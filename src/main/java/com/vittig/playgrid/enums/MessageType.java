@@ -6,5 +6,7 @@ public enum MessageType {
     ROOM_CREATED,
     GET_ROOMS,
     ROOMS_LIST,
+    JOIN_ROOM,
+    ROOM_JOINED,
     ERROR
 }

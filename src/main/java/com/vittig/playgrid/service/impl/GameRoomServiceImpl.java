@@ -1,13 +1,12 @@
 package com.vittig.playgrid.service.impl;
 
-import com.vittig.playgrid.dto.response.GameRoomResponse;
+import com.vittig.playgrid.exception.HostAlreadyOwnsARoomException;
+import com.vittig.playgrid.exception.InvalidRoomNameException;
 import com.vittig.playgrid.model.GameRoom;
 import com.vittig.playgrid.service.contract.GameRoomService;
 import org.springframework.stereotype.Service;
 
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Service
@@ -15,24 +14,31 @@ public class GameRoomServiceImpl implements GameRoomService {
     private final Map<String, GameRoom> rooms =
             new ConcurrentHashMap<>();
     @Override
-    public GameRoom createRoom(String hostId, String name) {
+    public synchronized GameRoom createRoom(String hostId, String name) {
 
         if(hostId == null || hostId.isBlank()){
             throw new IllegalArgumentException("Invalid host ID!");
         }
 
         if(name == null || name.isBlank()){
-            throw new IllegalArgumentException("Invalid room name!");
+            throw new InvalidRoomNameException("Invalid room name!");
+        }
+
+        if(rooms.containsKey(hostId)){
+            throw new HostAlreadyOwnsARoomException("The host already owns a room!");
+        }
+
+        boolean isSessionInRoom = getRooms().stream().anyMatch(gr ->
+                gr.members().contains(hostId));
+
+        if(isSessionInRoom){
+            throw new IllegalArgumentException("You already belong to a room!");
         }
 
         UUID id = UUID.randomUUID();
-        GameRoom gameRoom = new GameRoom(id, name, hostId);
+        GameRoom gameRoom = new GameRoom(id, name, hostId, Set.of(hostId));
 
-        GameRoom existingRoom = rooms.putIfAbsent(hostId, gameRoom);
-
-        if(existingRoom != null){
-            throw new IllegalStateException("The host already owns a room!");
-        }
+        rooms.putIfAbsent(hostId, gameRoom);
 
         return gameRoom;
     }
@@ -43,7 +49,48 @@ public class GameRoomServiceImpl implements GameRoomService {
     }
 
     @Override
-    public void removeRoomByHost(String hostId) {
+    public synchronized void removeRoomByHost(String hostId) {
         rooms.remove(hostId);
+    }
+
+    @Override
+    public synchronized GameRoom joinRoom(String sessionId, UUID roomId) {
+        if(sessionId == null || sessionId.isBlank()){
+            throw new IllegalArgumentException("Session not valid!");
+        }
+
+        if(roomId == null){
+            throw new IllegalArgumentException("Room not valid!");
+        }
+
+        GameRoom gameRoom = getRooms().stream().filter(r -> r.id().equals(roomId))
+                .findAny()
+                .orElseThrow(
+                () -> new IllegalArgumentException("No room!")
+        );
+
+        boolean isSessionInRoom = getRooms().stream().anyMatch(gr ->
+            gr.members().contains(sessionId));
+
+        if(isSessionInRoom){
+            throw new IllegalArgumentException("You already belong to a room!");
+        }
+
+        if(gameRoom.members().size() >= 2){
+            throw new IllegalArgumentException("Game Room contains 2 members!");
+        }
+
+        Set<String> newMembers = new HashSet<>(gameRoom.members());
+        newMembers.add(sessionId);
+        gameRoom = new GameRoom(
+                roomId,
+                gameRoom.name(),
+                gameRoom.hostId(),
+                newMembers
+        );
+
+        rooms.put(gameRoom.hostId(), gameRoom);
+
+        return gameRoom;
     }
 }
